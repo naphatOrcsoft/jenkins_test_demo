@@ -3,7 +3,8 @@ pipeline {
   tools { jdk 'jdk-1.8'; maven 'maven-3.9' }
   stages {
     stage('Checkout'){ steps { checkout scm } }
-    stage('Build & Test'){ steps { sh './mvnw -B verify' } }
+    // stage('Build & Test'){ steps { sh './mvnw -B verify' } }
+    stage('Build & Test'){ steps { sh 'mvn -B verify' } }
   }
   post {
     always {
