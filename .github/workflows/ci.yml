@@ -1,0 +1,43 @@
+name: CI (Build & Test)
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 8 (Temurin)
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '8'
+          cache: maven
+
+      - name: Build & Test
+        run: mvn -B -ntp verify
+
+      # Upload surefire reports (so you can inspect failing tests in Actions UI)
+      - name: Upload test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: surefire-reports
+          path: |
+            **/target/surefire-reports/**
+            **/target/failsafe-reports/**
+
+      # Upload the built jar(s)
+      - name: Upload jar artifact
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-jar
+          path: |
+            target/*.jar
