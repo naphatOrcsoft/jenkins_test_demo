@@ -1,3 +1,49 @@
+# name: CD (Docker to GHCR)
+
+# on:
+#   push:
+#     branches: [ main ]
+#   workflow_dispatch:
+
+# permissions:
+#   contents: read
+#   packages: write   # needed to push to GHCR
+
+# jobs:
+#   docker:
+#     runs-on: ubuntu-latest
+
+#     steps:
+#       - name: Checkout
+#         uses: actions/checkout@v4
+
+#       - name: Log in to GHCR
+#         uses: docker/login-action@v3
+#         with:
+#           registry: ghcr.io
+#           username: ${{ github.actor }}
+#           password: ${{ secrets.GITHUB_TOKEN }}
+
+#       - name: Extract tag versions
+#         id: meta
+#         run: |
+#           SHA_TAG=${GITHUB_SHA::7}
+#           echo "sha_tag=$SHA_TAG" >> $GITHUB_OUTPUT
+#           # optional: derive app version from pom.xml
+#           APP_VERSION=$(grep -m1 '<version>' pom.xml | sed -E 's/.*<version>(.+)<\/version>.*/\1/')
+#           echo "app_version=$APP_VERSION" >> $GITHUB_OUTPUT
+
+#       - name: Build & push
+#         uses: docker/build-push-action@v6
+#         with:
+#           context: .
+#           push: true
+#           tags: |
+#             ghcr.io/${{ github.repository }}:latest
+#             ghcr.io/${{ github.repository }}:${{ steps.meta.outputs.sha_tag }}
+#             ghcr.io/${{ github.repository }}:${{ steps.meta.outputs.app_version }}
+
+
 name: CD (Docker to GHCR)
 
 on:
@@ -7,7 +53,7 @@ on:
 
 permissions:
   contents: read
-  packages: write   # needed to push to GHCR
+  packages: write
 
 jobs:
   docker:
@@ -17,6 +63,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      # Optional but nice: ensures buildx is ready
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
       - name: Log in to GHCR
         uses: docker/login-action@v3
         with:
@@ -24,14 +74,23 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Extract tag versions
+      # Normalize owner/repo to lowercase for GHCR
+      - name: Normalize repo name (lowercase)
+        id: norm
+        run: |
+          echo "repo=$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]')" >> $GITHUB_OUTPUT
+
+      - name: Extract tags (sha + pom version)
         id: meta
         run: |
-          SHA_TAG=${GITHUB_SHA::7}
-          echo "sha_tag=$SHA_TAG" >> $GITHUB_OUTPUT
-          # optional: derive app version from pom.xml
+          # short SHA
+          echo "sha_tag=${GITHUB_SHA::7}" >> $GITHUB_OUTPUT
+
+          # version from pom.xml
           APP_VERSION=$(grep -m1 '<version>' pom.xml | sed -E 's/.*<version>(.+)<\/version>.*/\1/')
-          echo "app_version=$APP_VERSION" >> $GITHUB_OUTPUT
+          # sanitize for docker tag (lowercase + replace invalids)
+          SAFE_VER=$(echo "$APP_VERSION" | tr '[:upper:]' '[:lower:]' | sed -E 's/[^a-z0-9._-]+/-/g')
+          echo "app_version=$SAFE_VER" >> $GITHUB_OUTPUT
 
       - name: Build & push
         uses: docker/build-push-action@v6
@@ -39,6 +98,10 @@ jobs:
           context: .
           push: true
           tags: |
-            ghcr.io/${{ github.repository }}:latest
-            ghcr.io/${{ github.repository }}:${{ steps.meta.outputs.sha_tag }}
-            ghcr.io/${{ github.repository }}:${{ steps.meta.outputs.app_version }}
+            ghcr.io/${{ steps.norm.outputs.repo }}:latest
+            ghcr.io/${{ steps.norm.outputs.repo }}:${{ steps.meta.outputs.sha_tag }}
+            ghcr.io/${{ steps.norm.outputs.repo }}:${{ steps.meta.outputs.app_version }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ steps.norm.outputs.repo }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.title=${{ steps.norm.outputs.repo }}
